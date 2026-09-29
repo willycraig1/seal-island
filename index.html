@@ -50,7 +50,7 @@ function mix(h1, h2, t) {
 
 // ---------- save data ----------
 const SAVE_KEY = 'sealIsland.v1';
-const save = { fish: 0, bestSlide: 0, bestStack: 0, muted: false };
+const save = { fish: 0, bestSlide: 0, bestStack: 0, muted: false, owned: [], outfit: {} };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s) Object.assign(save, s); } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
@@ -252,6 +252,41 @@ const S = {
     if (!this.ok()) return; const t = this.now(dl);
     const o = this.o('sine', 660, t, .07); o.frequency.exponentialRampToValueAtTime(880, t + .06);
     const g = this.g(0); this.env(g, t, .002, .15, .02, .04); o.connect(g); g.connect(this.out);
+  },
+  chaching(dl) {
+    if (!this.ok()) return; const t = this.now(dl);
+    const nz = this.n(t, .12), hp = this.f('highpass', 4000), ng = this.g(0); this.env(ng, t, .002, .35, .02, .08);
+    nz.connect(hp); hp.connect(ng); ng.connect(this.out);
+    [[1319, .06], [1760, .14]].forEach(([f, st]) => {
+      const o = this.o('square', f, t + st, .35), lp = this.f('lowpass', 4000), g = this.g(0);
+      this.env(g, t + st, .003, .2, .05, .3); o.connect(lp); lp.connect(g); g.connect(this.out);
+    });
+    for (let i = 0; i < 5; i++) {
+      const tt = t + .2 + i * .05, o = this.o('sine', 2000 + i * 300, tt, .1), g = this.g(0);
+      this.env(g, tt, .002, .08, .02, .06); o.connect(g); g.connect(this.out);
+    }
+  },
+  nope(dl) { this.honk(.7, dl); this.honk(.58, (dl || 0) + .2); },
+  clown(dl) { this.honk(1.7, dl); this.honk(1.45, (dl || 0) + .16); },
+  partyHorn(dl) {
+    if (!this.ok()) return; const t = this.now(dl);
+    const o = this.o('sawtooth', 420, t, .6); o.frequency.exponentialRampToValueAtTime(560, t + .1);
+    const v = this.o('sine', 18, t, .6), vg = this.g(14); v.connect(vg); vg.connect(o.frequency);
+    const bp = this.f('bandpass', 1400, 1.5), g = this.g(0); this.env(g, t, .02, .3, .4, .15);
+    o.connect(bp); bp.connect(g); g.connect(this.out);
+  },
+  whirr(dl) {
+    if (!this.ok()) return; const t = this.now(dl);
+    const o = this.o('sawtooth', 30, t, .8); o.frequency.exponentialRampToValueAtTime(110, t + .5);
+    const lp = this.f('lowpass', 600, 2), g = this.g(0); this.env(g, t, .05, .35, .5, .2);
+    o.connect(lp); lp.connect(g); g.connect(this.out);
+  },
+  horn(dl) {
+    if (!this.ok()) return; const t = this.now(dl);
+    for (const k of [1, 1.5]) {
+      const o = this.o('sawtooth', 147 * k, t, 1), lp = this.f('lowpass', 700), g = this.g(0);
+      this.env(g, t, .15, k === 1 ? .35 : .15, .5, .3); o.connect(lp); lp.connect(g); g.connect(this.out);
+    }
   }
 };
 
@@ -296,6 +331,9 @@ function icon(c, k, sz) {
   c.fillStyle = '#fff'; c.strokeStyle = '#fff'; c.lineCap = 'round'; c.lineJoin = 'round';
   if (k === 'play') {
     c.beginPath(); c.moveTo(-sz * .38, -sz * .55); c.lineTo(sz * .6, 0); c.lineTo(-sz * .38, sz * .55); c.closePath(); c.fill();
+  } else if (k === 'prev' || k === 'next') {
+    const d = k === 'next' ? 1 : -1;
+    c.beginPath(); c.moveTo(-d * sz * .3, -sz * .45); c.lineTo(d * sz * .45, 0); c.lineTo(-d * sz * .3, sz * .45); c.closePath(); c.fill();
   } else if (k === 'home') {
     c.beginPath(); c.moveTo(0, -sz * .6); c.lineTo(sz * .62, -sz * .02); c.lineTo(sz * .44, -sz * .02); c.lineTo(sz * .44, sz * .55);
     c.lineTo(-sz * .44, sz * .55); c.lineTo(-sz * .44, -sz * .02); c.lineTo(-sz * .62, -sz * .02); c.closePath(); c.fill();
@@ -387,14 +425,18 @@ function drawSeal(c, x, y, o) {
   if (o.blush > 0) { c.fillStyle = 'rgba(255,90,120,' + (.55 * o.blush) + ')'; c.beginPath(); c.ellipse(38, -45, 8, 5, 0, 0, TAU); c.fill(); }
   // eyes
   const ey = (o.blinkT > 0 && (!o.eyes || o.eyes === 'n')) ? 'closed' : o.eyes;
-  eye(c, 32, -63, ey, o.lashes, col); eye(c, 47, -65, ey, o.lashes, col);
+  const T = performance.now() / 1000;
+  if (o.face === 'googly' && ey !== 'heart' && ey !== 'x') ITEM.googly.draw(c, T + (o.ph || 0));
+  else { eye(c, 32, -63, ey, o.lashes, col); eye(c, 47, -65, ey, o.lashes, col); }
   // accessories
   if (o.bowtie) {
     c.fillStyle = '#e03131'; c.beginPath(); c.moveTo(18, -32); c.lineTo(6, -40); c.lineTo(6, -24); c.closePath();
     c.moveTo(18, -32); c.lineTo(30, -40); c.lineTo(30, -24); c.closePath(); c.fill();
     c.fillStyle = '#a61e1e'; c.beginPath(); c.arc(18, -32, 3.5, 0, TAU); c.fill();
   }
-  if (o.bow) {
+  if (o.face && o.face !== 'googly' && ITEM[o.face]) ITEM[o.face].draw(c, T);
+  if (o.hat && ITEM[o.hat]) ITEM[o.hat].draw(c, T);
+  if (o.bow && !o.hat) {
     c.fillStyle = '#ff6fa8'; c.beginPath(); c.ellipse(22, -82, 10, 7, -.5, 0, TAU); c.fill();
     c.beginPath(); c.ellipse(38, -84, 10, 7, .5, 0, TAU); c.fill();
     c.fillStyle = '#e8488a'; c.beginPath(); c.arc(30, -82, 4, 0, TAU); c.fill();
@@ -411,6 +453,101 @@ function mkSeal(o) {
 function resetSeal(s) {
   Object.assign(s, { dx: 0, dy: 0, rot: 0, sq: 0, eyes: 'n', mouth: 'smile', blush: 0, flap: 0, anim: null, walk: false, shake: 0, fish: false, flip: s.baseFlip });
 }
+// ---------- the fish shop's stock (drawn in the seal's own coordinates; ic = icon centre) ----------
+const ITEMS = [
+  { id: 'nose', slot: 'face', price: 5, ic: [60, -54], icS: 2.4, draw(c) {
+    c.fillStyle = '#fa5252'; c.beginPath(); c.arc(60, -54, 8.5, 0, TAU); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.arc(57, -57, 2.6, 0, TAU); c.fill();
+  } },
+  { id: 'party', slot: 'head', price: 5, ic: [30, -96], draw(c) {
+    c.save(); c.translate(34, -78); c.rotate(-.3);
+    c.fillStyle = '#845ef7'; c.beginPath(); c.moveTo(-14, 0); c.lineTo(0, -38); c.lineTo(14, 0); c.closePath(); c.fill();
+    c.fillStyle = '#ffd43b'; for (const [x, y] of [[-5, -8], [5, -14], [-1, -24]]) { c.beginPath(); c.arc(x, y, 3, 0, TAU); c.fill(); }
+    c.fillStyle = '#ff6b6b'; c.beginPath(); c.arc(0, -39, 5.5, 0, TAU); c.fill(); c.restore();
+  } },
+  { id: 'shades', slot: 'face', price: 8, ic: [36, -66], icS: 1.5, draw(c) {
+    c.fillStyle = '#212529'; rr(c, 22, -71, 19, 14, 6); c.fill(); rr(c, 38, -73, 19, 14, 6); c.fill();
+    c.strokeStyle = '#212529'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(24, -66); c.lineTo(12, -62); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = 2; c.beginPath(); c.moveTo(26, -68); c.lineTo(31, -68); c.moveTo(42, -70); c.lineTo(47, -70); c.stroke();
+  } },
+  { id: 'beanie', slot: 'head', price: 8, ic: [38, -86], draw(c) {
+    c.save(); c.translate(38, -73); c.rotate(-.12);
+    c.fillStyle = '#ff6b6b'; c.beginPath(); c.arc(0, 0, 24, Math.PI, TAU); c.fill();
+    c.fillStyle = '#e03131'; rr(c, -26, -5, 52, 10, 5); c.fill();
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(0, -26, 7, 0, TAU); c.fill(); c.restore();
+  } },
+  { id: 'stache', slot: 'face', price: 10, ic: [60, -46], icS: 1.6, draw(c) {
+    c.fillStyle = '#5c3d2e';
+    c.beginPath(); c.ellipse(53, -47, 9, 4.5, .35, 0, TAU); c.fill();
+    c.beginPath(); c.ellipse(67, -47, 9, 4.5, -.35, 0, TAU); c.fill();
+    c.beginPath(); c.arc(45, -45, 3, 0, TAU); c.fill();
+    c.beginPath(); c.arc(75, -45, 3, 0, TAU); c.fill();
+  } },
+  { id: 'flower', slot: 'head', price: 10, ic: [38, -76], draw(c) {
+    const cols = ['#ff8cc6', '#ffd43b', '#74c0fc', '#ff8cc6', '#b197fc', '#ffd43b'];
+    for (let i = 0; i < 6; i++) {
+      const a = -2.7 + i * .42, x = 38 + Math.cos(a) * 24, y = -56 + Math.sin(a) * 24;
+      c.fillStyle = cols[i];
+      for (let k = 0; k < 5; k++) { const b = k * TAU / 5; c.beginPath(); c.arc(x + Math.cos(b) * 4, y + Math.sin(b) * 4, 3.4, 0, TAU); c.fill(); }
+      c.fillStyle = '#fff3bf'; c.beginPath(); c.arc(x, y, 2.6, 0, TAU); c.fill();
+    }
+  } },
+  { id: 'googly', slot: 'face', price: 15, ic: [40, -64], icS: 1.4, draw(c, t) {
+    for (const [x, y, k] of [[31, -63, 0], [48, -65, 1.7]]) {
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, 9, 0, TAU); c.fill(); c.strokeStyle = '#222'; c.lineWidth = 1.8; c.stroke();
+      c.fillStyle = '#222'; c.beginPath(); c.arc(x + Math.sin(t * 9 + k) * 3.5, y + 2 + Math.cos(t * 7 + k * 2) * 3, 4.2, 0, TAU); c.fill();
+    }
+  } },
+  { id: 'tophat', slot: 'head', price: 15, ic: [36, -98], draw(c) {
+    c.save(); c.translate(40, -77); c.rotate(-.15);
+    c.fillStyle = '#212529'; rr(c, -25, -5, 50, 8, 4); c.fill(); rr(c, -16, -42, 32, 40, 4); c.fill();
+    c.fillStyle = '#e03131'; c.fillRect(-16, -14, 32, 7); c.restore();
+  } },
+  { id: 'pirate', slot: 'head', price: 20, ic: [38, -88], icS: .9, draw(c) {
+    c.save(); c.translate(38, -76); c.rotate(-.1);
+    c.fillStyle = '#212529'; c.beginPath(); c.moveTo(-34, 2); c.quadraticCurveTo(0, -54, 34, 2); c.quadraticCurveTo(0, -10, -34, 2); c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(-8, -11); c.lineTo(8, -6); c.moveTo(8, -11); c.lineTo(-8, -6); c.stroke();
+    c.fillStyle = '#fff'; c.beginPath(); c.arc(0, -19, 5.5, 0, TAU); c.fill();
+    c.fillStyle = '#212529'; c.beginPath(); c.arc(-2.2, -20, 1.5, 0, TAU); c.fill(); c.beginPath(); c.arc(2.2, -20, 1.5, 0, TAU); c.fill();
+    c.restore();
+  } },
+  { id: 'viking', slot: 'head', price: 25, ic: [38, -92], icS: .85, draw(c) {
+    c.save(); c.translate(38, -74); c.rotate(-.08);
+    c.fillStyle = '#fff3bf';
+    for (const d of [-1, 1]) { c.beginPath(); c.moveTo(d * 18, -6); c.quadraticCurveTo(d * 42, -10, d * 40, -38); c.quadraticCurveTo(d * 32, -18, d * 14, -16); c.closePath(); c.fill(); }
+    c.fillStyle = '#adb5bd'; c.beginPath(); c.arc(0, 0, 23, Math.PI, TAU); c.fill();
+    c.fillStyle = '#868e96'; rr(c, -25, -6, 50, 9, 4); c.fill();
+    c.fillStyle = '#dee2e6'; for (const x of [-15, 0, 15]) { c.beginPath(); c.arc(x, -1.5, 2, 0, TAU); c.fill(); }
+    c.restore();
+  } },
+  { id: 'propeller', slot: 'head', price: 30, ic: [38, -92], draw(c, t) {
+    c.save(); c.translate(38, -74); c.rotate(-.1);
+    c.fillStyle = '#495057'; c.fillRect(-1.5, -32, 3, 12);
+    c.fillStyle = '#339af0'; c.beginPath(); c.arc(0, 0, 22, Math.PI, TAU); c.fill();
+    c.fillStyle = '#ffd43b'; c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 22, Math.PI * 1.35, Math.PI * 1.65); c.closePath(); c.fill();
+    c.fillStyle = '#1c7ed6'; c.beginPath(); c.ellipse(20, -1, 14, 4, 0, 0, TAU); c.fill();
+    const w = Math.cos(t * 22) * 24;
+    c.fillStyle = '#ff6b6b'; c.beginPath(); c.ellipse(w / 2, -33, Math.abs(w / 2) + 1.5, 4, 0, 0, TAU); c.fill();
+    c.fillStyle = '#c92a2a'; c.beginPath(); c.ellipse(-w / 2, -33, Math.abs(w / 2) + 1.5, 4, 0, 0, TAU); c.fill();
+    c.fillStyle = '#495057'; c.beginPath(); c.arc(0, -33, 3, 0, TAU); c.fill(); c.restore();
+  } },
+  { id: 'crown', slot: 'head', price: 50, ic: [38, -92], draw(c) {
+    c.save(); c.translate(38, -78); c.rotate(-.1);
+    c.fillStyle = '#fcc419'; c.strokeStyle = '#e67700'; c.lineWidth = 2; c.lineJoin = 'round';
+    c.beginPath(); c.moveTo(-19, 0); c.lineTo(-22, -24); c.lineTo(-10, -11); c.lineTo(0, -28); c.lineTo(10, -11); c.lineTo(22, -24); c.lineTo(19, 0); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#fa5252'; c.beginPath(); c.arc(0, -6, 3.6, 0, TAU); c.fill();
+    c.fillStyle = '#4dabf7'; c.beginPath(); c.arc(-11, -5, 2.6, 0, TAU); c.fill(); c.beginPath(); c.arc(11, -5, 2.6, 0, TAU); c.fill();
+    c.restore();
+  } }
+];
+const ITEM = {}; ITEMS.forEach(it => { ITEM[it.id] = it; });
+function wear(s, who) { const o = save.outfit[who] || {}; s.hat = o.head || null; s.face = o.face || null; return s; }
+function equipSound(id, dl = 0) {
+  const f = { party: () => S.partyHorn(dl), propeller: () => S.whirr(dl), crown: () => S.fanfare(dl), viking: () => S.horn(dl),
+    nose: () => S.clown(dl), googly: () => S.boing(dl, 1.6), pirate: () => S.honk(.62, dl) }[id];
+  if (f) f(); else S.pop(dl);
+}
+
 function hitSeal(s, x, y) { const w = 85 * s.s, h = 90 * s.s; return x > s.x - w && x < s.x + w && y > s.y - h && y < s.y + 12; }
 
 function sealTick(s, dt, t, P) {
@@ -442,6 +579,7 @@ function updAnim(s, dt, P) {
     case 'laugh': s.eyes = 'closed'; s.mouth = 'grin'; s.dy = -Math.abs(Math.sin(a.t * 16)) * 10; break;
     case 'hmph': s.eyes = 'half'; s.flip = !s.baseFlip; s.rot = -.15; break;
     case 'heart': s.eyes = 'heart'; break;
+    case 'sad': s.eyes = 'closed'; s.mouth = 'frown'; s.sq = .04; break;
   }
   if (a.t >= a.dur) { s.anim = null; s.dy = 0; s.rot = 0; s.sq = 0; s.eyes = 'n'; s.mouth = 'smile'; s.blush = 0; s.flip = s.baseFlip; }
 }
@@ -698,8 +836,8 @@ function go(s) { if (!next) next = s; }
 const Title = {
   enter() {
     this.t = 0; this.P = new Parts();
-    this.g = mkSeal({ s: 1.45, col: GCOL, bowtie: true, eyes: 'heart' });
-    this.p = mkSeal({ s: 1.05, col: '#eef2f6', belly: '#fff', flip: false, bow: true, lashes: true, eyes: 'half' });
+    this.g = wear(mkSeal({ s: 1.45, col: GCOL, bowtie: true, eyes: 'heart' }), 'gerald');
+    this.p = wear(mkSeal({ s: 1.05, col: '#eef2f6', belly: '#fff', flip: false, bow: true, lashes: true, eyes: 'half' }), 'pearl');
     this.btn = new Btn({ w: 220, h: 104, col: '#2fb45a', icon: 'play', bob: 0 });
   },
   update(dt) {
@@ -734,26 +872,30 @@ const Hub = {
   enter() {
     this.t = 0; this.P = new Parts(); this.tq = new TQ(); this.busy = false; this.auto = rand(10, 14); this.last = -1; this.proj = null;
     this.seals = [
-      mkSeal({ id: 'chonk', bx: -300, s: 1.15, col: '#76889a' }),
-      mkSeal({ id: 'squeak', bx: -185, s: .66, col: '#b3c1cd' }),
-      mkSeal({ id: 'gerald', bx: 30, s: .95, col: GCOL, bowtie: true })
+      wear(mkSeal({ id: 'chonk', bx: -300, s: 1.15, col: '#76889a' }), 'chonk'),
+      wear(mkSeal({ id: 'squeak', bx: -185, s: .66, col: '#b3c1cd' }), 'squeak'),
+      wear(mkSeal({ id: 'gerald', bx: 30, s: .95, col: GCOL, bowtie: true }), 'gerald')
     ];
     this.g = this.seals[2];
-    this.pearl = mkSeal({ id: 'pearl', bx: 320, s: .88, col: '#eef2f6', belly: '#ffffff', flip: true, bow: true, lashes: true });
+    this.pearl = wear(mkSeal({ id: 'pearl', bx: 320, s: .88, col: '#eef2f6', belly: '#ffffff', flip: true, bow: true, lashes: true }), 'pearl');
     this.cush = { bx: -95, t: 9 };
-    const card = (label, art) => (c, w, h, t) => { c.save(); c.translate(-w / 2 + 78, 30); art(c, t); c.restore(); txt(c, label, 42, 0, 34, '#fff', 'center', 'rgba(0,0,0,.25)', 6); };
+    const card = (label, art) => (c, w, h, t) => { c.save(); c.translate(0, 10); art(c, t); c.restore(); txt(c, label, 0, 38, 28, '#fff', 'center', 'rgba(0,0,0,.25)', 6); };
     this.btns = [
-      new Btn({ w: 300, h: 112, col: '#2d9cdb', bob: 0, act: () => go(Slide), art: card('Belly Slide', (c, t) => {
+      new Btn({ w: 230, h: 124, col: '#2d9cdb', bob: 0, act: () => go(Slide), art: card('Belly Slide', (c, t) => {
         c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 4; c.lineCap = 'round';
-        for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(-70, -30 + i * 12); c.lineTo(-50 - i * 6, -30 + i * 12); c.stroke(); }
+        for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(-62, -30 + i * 12); c.lineTo(-44 - i * 6, -30 + i * 12); c.stroke(); }
         drawSeal(c, 0, 0, this.iconSlide);
       }) }),
-      new Btn({ w: 300, h: 112, col: '#f2994a', bob: 1.7, act: () => go(Stack), art: card('Seal Stack', (c, t) => {
-        c.translate(0, 4); drawSeal(c, 0, 0, this.iconStack[0]); drawSeal(c, 4, -24, this.iconStack[1]); drawSeal(c, -2, -48, this.iconStack[2]);
+      new Btn({ w: 230, h: 124, col: '#f2994a', bob: 1.7, act: () => go(Stack), art: card('Seal Stack', (c, t) => {
+        drawSeal(c, 0, 0, this.iconStack[0]); drawSeal(c, 4, -19, this.iconStack[1]); drawSeal(c, -2, -38, this.iconStack[2]);
+      }) }),
+      new Btn({ w: 230, h: 124, col: '#9c5de0', bob: 3.1, act: () => go(Shop), art: card('Fish Shop', (c, t) => {
+        c.save(); c.translate(-22, -18); c.scale(1.4, 1.4); c.translate(-ITEM.crown.ic[0], -ITEM.crown.ic[1]); ITEM.crown.draw(c, t); c.restore();
+        fish(c, 34, -18, 46, '#ffa94d', Math.sin(t * 3) * .2);
       }) })
     ];
-    this.iconSlide = mkSeal({ s: .5, col: GCOL, bowtie: true, mouth: 'grin', rot: .12, flap: -1.6 });
-    this.iconStack = [mkSeal({ s: .36, col: '#7d8e9e' }), mkSeal({ s: .36, col: '#b8a99a', flip: true }), mkSeal({ s: .36, col: GCOL, bowtie: true, eyes: 'heart' })];
+    this.iconSlide = wear(mkSeal({ s: .48, col: GCOL, bowtie: true, mouth: 'grin', rot: .12, flap: -1.6 }), 'gerald');
+    this.iconStack = [mkSeal({ s: .3, col: '#7d8e9e' }), mkSeal({ s: .3, col: '#b8a99a', flip: true }), wear(mkSeal({ s: .3, col: GCOL, bowtie: true, eyes: 'heart' }), 'gerald')];
   },
   update(dt) {
     this.t += dt; now = this.t; this.P.update(dt); this.tq.update(dt);
@@ -764,7 +906,7 @@ const Hub = {
     if (this.proj) { this.proj.t += dt; }
     if (!this.busy) { this.auto -= dt; if (this.auto <= 0) this.startSkit(); }
     this.cush.t += dt;
-    this.btns[0].x = cx - 165; this.btns[1].x = cx + 165; this.btns[0].y = this.btns[1].y = H - 82;
+    this.btns.forEach((b, i) => { b.x = cx + (i - 1) * 250; b.y = H - 80; });
   },
   startSkit() { let i; do { i = irand(0, 3); } while (i === this.last); this.last = i; this.skit(i); },
 
@@ -850,6 +992,7 @@ const Hub = {
   down(x, y) {
     if (muteBtn.hit(x, y)) { toggleMute(); return; }
     for (const b of this.btns) if (b.hit(x, y)) { b.press = 1; S.tap(); b.act(); return; }
+    if (x < 200 && y < 80) { S.tap(); go(Shop); return; }
     const p = this.pearl, g = this.g;
     if (hitSeal(p, x, y)) {
       if (!this.busy && !p.anim) {
@@ -872,7 +1015,7 @@ const Hub = {
       }
     }
   },
-  key(k) { if (k === '1') go(Slide); if (k === '2') go(Stack); },
+  key(k) { if (k === '1') go(Slide); if (k === '2') go(Stack); if (k === '3') go(Shop); },
   draw(c) {
     const t = this.t, cx = W / 2, L = cx - 470, R = cx + 185, T = BERG_Y;
     drawSky(c, SEA); drawSun(c, W - 150, 120); drawClouds(c, t, 40); drawFarBergs(c, SEA);
@@ -921,7 +1064,7 @@ const Slide = {
   enter() {
     Object.assign(this, { t: 0, P: new Parts(), tq: new TQ(), state: 'intro', items: [], fish: 0, lives: 3, lane: 1, gy: LY[1], speed: 0, dist: 0,
       nextSpawn: 300, boost: 0, inv: 0, el: 0, fartT: 0, pc: null, nextPearl: rand(12, 16), results: null, cr: null, committed: false, goT: 0, swipe: null });
-    this.g = mkSeal({ s: LS[1], col: GCOL, bowtie: true, mouth: 'grin', flap: -1.6 });
+    this.g = wear(mkSeal({ s: LS[1], col: GCOL, bowtie: true, mouth: 'grin', flap: -1.6 }), 'gerald');
     this.decor = []; for (let i = 0; i < 16; i++) this.decor.push(this.mkDecor(rand(0, W + 200)));
   },
   gx() { return Math.max(170, W * .2); },
@@ -1081,7 +1224,7 @@ const Slide = {
     if (this.pc) {
       const pc = this.pc;
       c.fillStyle = '#e8f4fc'; c.beginPath(); c.ellipse(pc.x, horizon + 12, 90, 24, 0, Math.PI, TAU); c.fill();
-      drawSeal(c, pc.x, horizon + 2, { s: .5, col: '#eef2f6', dark: '#c9d2da', belly: '#fff', flip: !pc.turned, bow: true, lashes: true, eyes: pc.turned ? 'half' : 'n', rot: pc.turned ? -.15 : 0 });
+      drawSeal(c, pc.x, horizon + 2, { s: .5, col: '#eef2f6', dark: '#c9d2da', belly: '#fff', flip: !pc.turned, bow: true, lashes: true, hat: (save.outfit.pearl || {}).head, face: (save.outfit.pearl || {}).face, eyes: pc.turned ? 'half' : 'n', rot: pc.turned ? -.15 : 0 });
     }
     // lane grooves + decorations
     for (let l = 0; l < 3; l++) { c.fillStyle = 'rgba(140,190,225,.14)'; c.fillRect(0, LY[l] - 6, W, 14); }
@@ -1134,12 +1277,15 @@ const Stack = {
   newLevel() {
     this.N = 3 + this.level * 2; this.stack = []; this.falling = null; this.debris = []; this.thief = null; this.state = 'play';
     this.gull = { x: this.fx(), ph: rand(0, TAU), carry: null, back: .8, pop: 1, dir: 1, off: 0 };
-    this.pearl = mkSeal({ s: STACK_S, col: '#eef2f6', belly: '#fff', flip: true, bow: true, lashes: true });
+    this.pearl = wear(mkSeal({ s: STACK_S, col: '#eef2f6', belly: '#fff', flip: true, bow: true, lashes: true }), 'pearl');
     this.banner = { t: 0, txt: this.level === 1 ? 'Help Gerald reach Pearl!' : 'Level ' + this.level + '!', sub: 'Tap to drop a seal' };
   },
   makeSeal() {
-    if (this.stack.length === this.N - 1) return mkSeal({ s: STACK_S, col: GCOL, bowtie: true, flower: true, eyes: 'heart', gerald: true });
-    return mkSeal({ s: STACK_S, col: pick(SEAL_COLS), flip: Math.random() < .5, eyes: pick(['n', 'n', 'wide', 'half']), mouth: pick(['smile', 'o', 'grin']) });
+    if (this.stack.length === this.N - 1) return wear(mkSeal({ s: STACK_S, col: GCOL, bowtie: true, flower: true, eyes: 'heart', gerald: true }), 'gerald');
+    const s = mkSeal({ s: STACK_S, col: pick(SEAL_COLS), flip: Math.random() < .5, eyes: pick(['n', 'n', 'wide', 'half']), mouth: pick(['smile', 'o', 'grin']) });
+    const hats = save.owned.filter(id => ITEM[id] && ITEM[id].slot === 'head');   // bought hats turn up on random seals
+    if (hats.length && Math.random() < .35) s.hat = pick(hats);
+    return s;
   },
   drop() {
     const G = this.gull; if (!G.carry || this.state !== 'play' || this.falling) return;
@@ -1322,6 +1468,114 @@ const Stack = {
       c.restore();
     }
     if (this.results) drawResults(c, this.results, t);
+  }
+};
+
+// ---------- FISH SHOP ----------
+const WHO = [
+  { id: 'gerald', name: 'Gerald', col: GCOL, bowtie: true },
+  { id: 'pearl', name: 'Pearl', col: '#eef2f6', belly: '#fff', bow: true, lashes: true },
+  { id: 'chonk', name: 'Chonk', col: '#76889a' },
+  { id: 'squeak', name: 'Squeak', col: '#b3c1cd' }
+];
+const Shop = {
+  enter() {
+    this.t = 0; this.P = new Parts(); this.tq = new TQ(); this.wi = this.wi || 0; this.shake = {}; this.flash = 0; this.peng = 0;
+    this.prev = new Btn({ w: 62, h: 62, round: true, col: '#f2994a', icon: 'prev' });
+    this.next = new Btn({ w: 62, h: 62, round: true, col: '#f2994a', icon: 'next' });
+    this.setModel(); this.layout();
+  },
+  setModel() { const d = WHO[this.wi]; this.model = wear(mkSeal(Object.assign({ s: 1.3 }, d)), d.id); },
+  outfit() { const id = WHO[this.wi].id; return save.outfit[id] || (save.outfit[id] = {}); },
+  layout() {
+    const x0 = Math.max(W * .47, 380), gap = 12, tile = Math.min(112, (W - x0 - 24 - gap * 3) / 4);
+    this.tiles = ITEMS.map((it, i) => ({ it, s: tile, x: x0 + (i % 4) * (tile + gap) + tile / 2, y: 150 + Math.floor(i / 4) * (tile + gap) + tile / 2 }));
+    this.mx = Math.min(W * .24, x0 - 190);
+  },
+  update(dt) {
+    this.t += dt; now = this.t; this.P.update(dt); this.tq.update(dt); this.layout();
+    const m = this.model; m.x = this.mx; m.y = 440; sealTick(m, dt, this.t, this.P);
+    this.prev.x = this.mx - 125; this.next.x = this.mx + 125; this.prev.y = this.next.y = 528;
+    for (const k in this.shake) { this.shake[k] -= dt; if (this.shake[k] <= 0) delete this.shake[k]; }
+    if (this.flash > 0) this.flash -= dt;
+    if (this.peng > 0) this.peng -= dt;
+  },
+  cycle(d) {
+    this.wi = (this.wi + d + WHO.length) % WHO.length; this.setModel();
+    S.swish(); S.honk([1, 1.2, .72, 1.5][this.wi], .1); this.model.anim = { type: 'hop', t: 0, dur: .55 };
+  },
+  tapItem(tl) {
+    const it = tl.it, o = this.outfit(), m = this.model, owned = save.owned.indexOf(it.id) >= 0;
+    if (owned) {
+      if (o[it.slot] === it.id) { delete o[it.slot]; S.whistle(false, 0, .3); }
+      else { o[it.slot] = it.id; equipSound(it.id); m.anim = { type: 'hop', t: 0, dur: .55 }; }
+    } else if (save.fish >= it.price) {
+      save.fish -= it.price; save.owned.push(it.id); o[it.slot] = it.id;
+      S.chaching(); equipSound(it.id, .45); this.peng = .9;
+      for (let k = 0; k < Math.min(it.price, 8); k++) this.tq.add(k * .05, () => this.P.add({ k: 'fish', x: 50, y: 45, vx: (tl.x - 50) / .45, vy: (tl.y - 45) / .45, life: .45, s: 26, fade: false }));
+      this.tq.add(.45, () => { stars(this.P, tl.x, tl.y, 8); m.anim = { type: 'hop', t: 0, dur: .55 }; hearts(this.P, m.x + 30, m.y - 110, 4); });
+    } else {
+      this.shake[it.id] = .5; this.flash = .9; S.nope(); m.anim = { type: 'sad', t: 0, dur: .9 };
+    }
+    persist(); wear(m, WHO[this.wi].id);
+  },
+  down(x, y) {
+    if (homeBtn.hit(x, y)) { go(Hub); return; }
+    if (muteBtn.hit(x, y)) { toggleMute(); return; }
+    if (this.prev.hit(x, y)) { this.prev.press = 1; this.cycle(-1); return; }
+    if (this.next.hit(x, y)) { this.next.press = 1; this.cycle(1); return; }
+    for (const tl of this.tiles) if (Math.abs(x - tl.x) < tl.s / 2 && Math.abs(y - tl.y) < tl.s / 2) { this.tapItem(tl); return; }
+    const m = this.model;
+    if (hitSeal(m, x, y) && !m.anim) {
+      if (m.face === 'nose') { S.clown(); m.anim = { type: 'hop', t: 0, dur: .55 }; }
+      else react(m, this.P);
+    }
+  },
+  key(k) { if (k === 'ArrowLeft') this.cycle(-1); if (k === 'ArrowRight') this.cycle(1); if (k === 'Escape') go(Hub); },
+  draw(c) {
+    const t = this.t, T = performance.now() / 1000, o = this.outfit();
+    // ice-shack wall, floor, awning
+    c.fillStyle = '#d7eefb'; c.fillRect(0, 0, W, H);
+    c.strokeStyle = 'rgba(120,170,210,.25)'; c.lineWidth = 2;
+    for (let y = 100; y < 470; y += 46) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+    c.fillStyle = '#b9dcf2'; c.fillRect(0, 470, W, H - 470);
+    const sw = 60;
+    for (let x = 0, i = 0; x < W + sw; x += sw, i++) { c.fillStyle = i % 2 ? '#ffffff' : '#ff6b6b'; c.fillRect(x, 0, sw, 50); c.beginPath(); c.arc(x + sw / 2, 50, sw / 2, 0, Math.PI); c.fill(); }
+    // rug, model seal, shopkeeper
+    c.fillStyle = '#f783ac'; c.beginPath(); c.ellipse(this.mx, 446, 150, 26, 0, 0, TAU); c.fill();
+    c.fillStyle = '#faa2c1'; c.beginPath(); c.ellipse(this.mx, 444, 124, 18, 0, 0, TAU); c.fill();
+    drawSeal(c, this.model.x, this.model.y, this.model);
+    const px = Math.min(this.mx + 160, this.tiles[0].x - this.tiles[0].s / 2 - 34);
+    c.save(); c.translate(px, 478 - (this.peng > 0 ? Math.abs(Math.sin(this.peng * 12)) * 20 : 0)); c.scale(1.15, 1.15); drawPenguin(c, this.peng > 0 ? t * 3 : t); c.restore();
+    // stock
+    for (const tl of this.tiles) {
+      const it = tl.it, s = tl.s, owned = save.owned.indexOf(it.id) >= 0, worn = o[it.slot] === it.id, afford = save.fish >= it.price;
+      const sh = this.shake[it.id] ? Math.sin(this.shake[it.id] * 50) * 7 : 0;
+      c.save(); c.translate(tl.x + sh, tl.y);
+      c.fillStyle = 'rgba(0,0,0,.12)'; rr(c, -s / 2, -s / 2 + 5, s, s, 18); c.fill();
+      c.fillStyle = worn ? '#d3f9d8' : '#ffffff'; rr(c, -s / 2, -s / 2, s, s, 18); c.fill();
+      if (worn) { c.strokeStyle = '#2fb45a'; c.lineWidth = 5; rr(c, -s / 2, -s / 2, s, s, 18); c.stroke(); }
+      c.save(); if (!owned && !afford) c.globalAlpha = .45;
+      const k = s / 76 * (it.icS || 1); c.translate(0, owned ? 0 : -10); c.scale(k, k); c.translate(-it.ic[0], -it.ic[1]); it.draw(c, T);
+      c.restore();
+      if (!owned) {
+        c.fillStyle = afford ? '#ffe8cc' : '#ffe3e3'; rr(c, -s * .38, s / 2 - 27, s * .76, 22, 11); c.fill();
+        fish(c, -s * .18, s / 2 - 16, 22, '#ffa94d');
+        txt(c, String(it.price), s * .1, s / 2 - 15, 19, afford ? '#d9480f' : '#c92a2a', 'center', null);
+      } else {
+        c.fillStyle = worn ? '#2fb45a' : '#b2f2bb'; c.beginPath(); c.arc(s / 2 - 14, -s / 2 + 14, 11, 0, TAU); c.fill();
+        c.strokeStyle = '#fff'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath(); c.moveTo(s / 2 - 19, -s / 2 + 14); c.lineTo(s / 2 - 15, -s / 2 + 18); c.lineTo(s / 2 - 8, -s / 2 + 9); c.stroke();
+      }
+      c.restore();
+    }
+    this.P.draw(c);
+    // HUD
+    wobblyTitle(c, 'Fish Shop', this.mx, 112, 54, t);
+    fishPill(c, save.fish);
+    if (this.flash > 0 && Math.floor(this.flash * 8) % 2) { c.strokeStyle = '#fa5252'; c.lineWidth = 5; rr(c, 16, 16, 80 + String(save.fish).length * 21, 58, 29); c.stroke(); }
+    cornerBtns(c, t, true);
+    this.prev.draw(c, t); this.next.draw(c, t);
+    txt(c, WHO[this.wi].name, this.mx, 528, 32, '#fff');
   }
 };
 
