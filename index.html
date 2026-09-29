@@ -50,7 +50,7 @@ function mix(h1, h2, t) {
 
 // ---------- save data ----------
 const SAVE_KEY = 'sealIsland.v1';
-const save = { fish: 0, bestSlide: 0, bestStack: 0, bestLaunch: 0, pearlDist: 120, muted: false, owned: [], outfit: {} };
+const save = { fish: 0, bestSlide: 0, bestStack: 0, bestLaunch: 0, bestChoir: 0, pearlDist: 120, muted: false, owned: [], outfit: {} };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s) Object.assign(save, s); } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
@@ -293,6 +293,20 @@ const S = {
     const o = this.o('sawtooth', 70, t, .5); o.frequency.exponentialRampToValueAtTime(150, t + .45);
     const lp = this.f('lowpass', 500, 4), g = this.g(0); this.env(g, t, .05, .15, .3, .1);
     o.connect(lp); lp.connect(g); g.connect(this.out);
+  },
+  note(f, dl) {
+    if (!this.ok()) return; const t = this.now(dl), d = .38;
+    const bp = this.f('bandpass', f * 3, 1.1), g = this.g(0); this.env(g, t, .015, .5, d * .5, d * .5);
+    for (const k of [1, 1.008]) { const o = this.o('square', f * .9 * k, t, d); o.frequency.exponentialRampToValueAtTime(f * k, t + .05); o.connect(bp); }
+    bp.connect(g); g.connect(this.out);
+  },
+  cheer(dl) {
+    if (!this.ok()) return; const t = this.now(dl);
+    for (let i = 0; i < 10; i++) {
+      const tt = t + i * rand(.04, .09), nz = this.n(tt, .25), bp = this.f('bandpass', rand(900, 2600), 3), g = this.g(0);
+      this.env(g, tt, .02, .12, .08, .12); nz.connect(bp); bp.connect(g); g.connect(this.out);
+    }
+    this.whistle(true, (dl || 0) + .1, .35); this.whistle(true, (dl || 0) + .4, .3);
   },
   horn(dl) {
     if (!this.ok()) return; const t = this.now(dl);
@@ -554,6 +568,12 @@ const ITEMS = [
   } }
 ];
 const ITEM = {}; ITEMS.forEach(it => { ITEM[it.id] = it; });
+// not for sale: Pearl's earmuffs, for when Gerald sings
+ITEM.muffs = { draw(c) {
+  c.strokeStyle = '#e64980'; c.lineWidth = 5; c.beginPath(); c.arc(38, -56, 28, Math.PI * 1.05, Math.PI * 1.75); c.stroke();
+  c.fillStyle = '#ff8cc6'; c.beginPath(); c.arc(16, -48, 12, 0, TAU); c.fill();
+  c.fillStyle = 'rgba(255,255,255,.6)'; c.beginPath(); c.arc(13, -51, 4, 0, TAU); c.fill();
+} };
 function wear(s, who) { const o = save.outfit[who] || {}; s.hat = o.head || null; s.face = o.face || null; return s; }
 function equipSound(id, dl = 0) {
   const f = { party: () => S.partyHorn(dl), propeller: () => S.whirr(dl), crown: () => S.fanfare(dl), viking: () => S.horn(dl),
@@ -592,6 +612,7 @@ function updAnim(s, dt, P) {
     case 'laugh': s.eyes = 'closed'; s.mouth = 'grin'; s.dy = -Math.abs(Math.sin(a.t * 16)) * 10; break;
     case 'hmph': s.eyes = 'half'; s.flip = !s.baseFlip; s.rot = -.15; break;
     case 'heart': s.eyes = 'heart'; break;
+    case 'sing': s.mouth = 'o'; s.rot = -.2 * Math.sin(p * Math.PI); s.sq = -.1 * Math.sin(p * Math.PI); break;
     case 'sad': s.eyes = 'closed'; s.mouth = 'frown'; s.sq = .04; break;
   }
   if (a.t >= a.dur) { s.anim = null; s.dy = 0; s.rot = 0; s.sq = 0; s.eyes = 'n'; s.mouth = 'smile'; s.blush = 0; s.flip = s.baseFlip; }
@@ -699,7 +720,7 @@ class Parts {
           c.closePath(); c.fill(); c.restore(); break;
         case 'fish': fish(c, p.x, p.y, p.s, p.col, p.r); break;
         case 'text': txt(c, p.str, p.x, p.y, p.s, p.col || '#fff'); break;
-        case 'note': txt(c, '♪', p.x, p.y, p.s, '#fff'); break;
+        case 'note': txt(c, '♪', p.x, p.y, p.s, p.col || '#fff'); break;
         case 'ring': {
           const e = 1 + k * 2.5; c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineWidth = 3;
           c.beginPath(); c.ellipse(p.x, p.y, p.s * e, p.s * .3 * e, 0, 0, TAU); c.stroke(); break;
@@ -759,6 +780,7 @@ class Btn {
     c.fillStyle = 'rgba(255,255,255,.22)'; rr(c, -w / 2 + 8, -h / 2 + 5, w - 16, h * .32, r * .7); c.fill();
     if (this.art) this.art(c, w, h, t);
     if (typeof this.icon === 'string') icon(c, this.icon, Math.min(w, h) * .5);
+    if (this.label) txt(c, this.label, 0, 0, this.fs || 24, '#fff', 'center', 'rgba(0,0,0,.25)', 5);
     c.restore();
   }
 }
@@ -892,7 +914,7 @@ const Hub = {
     this.g = this.seals[2];
     this.pearl = wear(mkSeal({ id: 'pearl', bx: 320, s: .88, col: '#eef2f6', belly: '#ffffff', flip: true, bow: true, lashes: true }), 'pearl');
     this.cush = { bx: -95, t: 9 };
-    const card = (label, art) => (c, w, h, t) => { c.save(); c.translate(0, 10); art(c, t); c.restore(); txt(c, label, 0, 38, Math.min(28, w / 6.6), '#fff', 'center', 'rgba(0,0,0,.25)', 6); };
+    const card = (label, art) => (c, w, h, t) => { const k = Math.min(1, w / 190); c.save(); c.translate(0, 10); c.scale(k, k); art(c, t); c.restore(); txt(c, label, 0, 38, Math.min(28, w / 6.6), '#fff', 'center', 'rgba(0,0,0,.25)', 6); };
     this.btns = [
       new Btn({ w: 230, h: 124, col: '#2d9cdb', bob: 0, act: () => go(Slide), art: card('Belly Slide', (c, t) => {
         c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 4; c.lineCap = 'round';
@@ -907,6 +929,11 @@ const Hub = {
         c.beginPath(); c.moveTo(-62, 0); c.quadraticCurveTo(-10, -72, 52, -8); c.stroke(); c.setLineDash([]);
         drawSeal(c, 6, -26, this.iconLaunch);
       }) }),
+      new Btn({ w: 230, h: 124, col: '#f06595', bob: .8, act: () => go(Choir), art: card('Seal Choir', (c, t) => {
+        [0, 2, 4].forEach((n, i) => { c.fillStyle = NOTE_COLS[n]; rr(c, -58 + i * 40, -8 - i * 10, 34, 18 + i * 10, 6); c.fill(); });
+        drawSeal(c, 2, -18, this.iconChoir);
+        txt(c, '♪', -44, -44 + Math.sin(t * 4) * 4, 26, '#fff', 'center', null); txt(c, '♪', 52, -56 + Math.cos(t * 4) * 4, 22, '#fff', 'center', null);
+      }) }),
       new Btn({ w: 230, h: 124, col: '#9c5de0', bob: 3.1, act: () => go(Shop), art: card('Fish Shop', (c, t) => {
         c.save(); c.translate(-22, -18); c.scale(1.4, 1.4); c.translate(-ITEM.crown.ic[0], -ITEM.crown.ic[1]); ITEM.crown.draw(c, t); c.restore();
         fish(c, 34, -18, 46, '#ffa94d', Math.sin(t * 3) * .2);
@@ -914,6 +941,7 @@ const Hub = {
     ];
     this.iconSlide = wear(mkSeal({ s: .48, col: GCOL, bowtie: true, mouth: 'grin', rot: .12, flap: -1.6 }), 'gerald');
     this.iconLaunch = wear(mkSeal({ s: .42, col: GCOL, bowtie: true, rot: -.45, eyes: 'wide', mouth: 'grin' }), 'gerald');
+    this.iconChoir = wear(mkSeal({ s: .34, col: GCOL, bowtie: true, mouth: 'o', rot: -.15 }), 'gerald');
     this.iconStack = [mkSeal({ s: .3, col: '#7d8e9e' }), mkSeal({ s: .3, col: '#b8a99a', flip: true }), wear(mkSeal({ s: .3, col: GCOL, bowtie: true, eyes: 'heart' }), 'gerald')];
   },
   update(dt) {
@@ -925,8 +953,8 @@ const Hub = {
     if (this.proj) { this.proj.t += dt; }
     if (!this.busy) { this.auto -= dt; if (this.auto <= 0) this.startSkit(); }
     this.cush.t += dt;
-    const sp = Math.min(250, (W - 30) / 4);
-    this.btns.forEach((b, i) => { b.w = sp - 14; b.x = cx + (i - 1.5) * sp; b.y = H - 80; });
+    const n = this.btns.length, sp = Math.min(250, (W - 30) / n);
+    this.btns.forEach((b, i) => { b.w = sp - 14; b.x = cx + (i - (n - 1) / 2) * sp; b.y = H - 80; });
   },
   startSkit() { let i; do { i = irand(0, 3); } while (i === this.last); this.last = i; this.skit(i); },
 
@@ -1035,7 +1063,7 @@ const Hub = {
       }
     }
   },
-  key(k) { const to = { 1: Slide, 2: Stack, 3: Launch, 4: Shop }[k]; if (to) go(to); },
+  key(k) { const to = { 1: Slide, 2: Stack, 3: Launch, 4: Choir, 5: Shop }[k]; if (to) go(to); },
   draw(c) {
     const t = this.t, cx = W / 2, L = cx - 470, R = cx + 185, T = BERG_Y;
     drawSky(c, SEA); drawSun(c, W - 150, 120); drawClouds(c, t, 40); drawFarBergs(c, SEA);
@@ -1790,6 +1818,235 @@ const Launch = {
     }
     if (this.hintT > 0 && this.boosts > 0 && this.state === 'fly') {
       c.save(); c.globalAlpha = Math.min(1, this.hintT); txt(c, 'Tap to toot!', W / 2, 110, 38, '#b9dc7e', 'center', '#2b5d12'); c.restore();
+    }
+    if (this.results) drawResults(c, this.results, t);
+  }
+};
+
+// ---------- SEAL CHOIR ----------
+const NOTES = [262, 294, 330, 349, 392, 440];                     // C D E F G A
+const NOTE_COLS = ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#4dabf7', '#b197fc'];
+const SONGS = [
+  { name: 'Twinkle Star', n: [0, 0, 4, 4, 5, 5, 4, 3, 3, 2, 2, 1, 1, 0] },
+  { name: 'Little Lamb', n: [2, 1, 0, 1, 2, 2, 2, 1, 1, 1, 2, 4, 4, 2, 1, 0, 1, 2, 2, 2, 2, 1, 1, 2, 1, 0] },
+  { name: 'Jingle Bells', n: [2, 2, 2, 2, 2, 2, 2, 4, 0, 1, 2, 3, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 2, 1, 4] }
+];
+const STAGE = 440;
+const Choir = {
+  enter() {
+    Object.assign(this, { t: 0, P: new Parts(), tq: new TQ(), mode: 'free', phase: '', picker: false, song: null, pos: 0,
+      seq: [], round: 0, lives: 3, earned: 0, results: null, taps: 0, proj: null, peng: [0, 0, 0, 0], cush: 9 });
+    const defs = [{ who: 'chonk', col: '#76889a', s: .8 }, { col: '#a9b7c4' }, { col: '#b8a99a' }, { col: '#8e9fb5' },
+      { who: 'gerald', col: GCOL, bowtie: true }, { who: 'squeak', col: '#b3c1cd', s: .56 }];
+    this.singers = defs.map(d => { const s = mkSeal(Object.assign({ s: .7 }, d)); if (d.who) wear(s, d.who); s.glow = 0; return s; });
+    this.gerald = this.singers[4];
+    this.pearl = wear(mkSeal({ s: .7, col: '#eef2f6', belly: '#fff', flip: true, bow: true, lashes: true }), 'pearl');
+    this.pearlHat = this.pearl.hat;
+    this.modeBtns = [['free', 'Play', '#4dabf7'], ['song', 'Songs', '#f06595'], ['copy', 'Copy Me', '#20c997']]
+      .map(([m, label, col]) => new Btn({ w: 150, h: 54, col, label, m }));
+    this.cards = SONGS.map((sg, i) => new Btn({ w: 280, h: 78, col: NOTE_COLS[[0, 2, 4][i]], label: sg.name, fs: 30, i }));
+    this.banner = { t: 0, txt: 'Tap the seals!' };
+    this.layout();
+  },
+  layout() {
+    const n = 6, sp = Math.min(150, (W - 60) / n), x0 = W / 2 - sp * (n - 1) / 2;
+    this.cols = this.singers.map((s, i) => ({ x: x0 + i * sp, top: STAGE - 38 - i * 15, w: sp }));
+    this.modeBtns.forEach((b, i) => { b.x = W / 2 + (i - 1) * 162; b.y = 46; });
+    this.cards.forEach((b, i) => { b.x = W / 2; b.y = H / 2 - 60 + i * 96; });
+  },
+  resetStage() {
+    this.tq.clear(); this.proj = null;
+    this.singers.forEach(s => { resetSeal(s); s.glow = 0; }); resetSeal(this.pearl); this.pearl.hat = this.pearlHat;
+  },
+  setMode(m) {
+    this.resetStage(); this.mode = m; this.phase = ''; this.picker = false; this.banner = null;
+    if (m === 'free') this.banner = { t: 0, txt: 'Tap the seals!' };
+    else if (m === 'song') this.picker = true;
+    else this.startCopy();
+  },
+  play(i) {
+    const s = this.singers[i], col = this.cols[i];
+    S.note(NOTES[i]); s.glow = 1; s.anim = { type: 'sing', t: 0, dur: .4 };
+    this.P.add({ k: 'note', x: s.x + 30, y: col.top - 62, vx: rand(-20, 30), vy: -rand(70, 110), life: 1.2, s: 32, col: NOTE_COLS[i] });
+  },
+  tapSeal(i) {
+    if (this.mode === 'copy') {
+      if (this.phase !== 'input') return;
+      if (this.seq[this.pos] === i) { this.play(i); this.pos++; if (this.pos === this.seq.length) this.roundWon(); }
+      else this.oops(i);
+      return;
+    }
+    this.play(i);
+    if (this.mode === 'song' && this.phase === 'play' && i === this.song.n[this.pos]) {
+      this.pos++; if (this.pos >= this.song.n.length) this.songDone();
+    }
+    if (this.mode === 'free') this.taps++;
+  },
+  // --- Songs: follow the glowing seal ---
+  startSong(i) { this.resetStage(); this.picker = false; this.song = SONGS[i]; this.pos = 0; this.phase = 'play'; },
+  songDone() {
+    this.phase = 'done'; save.fish += 5; persist();
+    S.cheer(.3); S.fanfare(.35); this.peng = [1.6, 1.6, 1.6, 1.6];
+    this.P.add({ k: 'text', str: '+5', x: 80, y: 110, vy: -40, life: 1.5, s: 40, col: '#ffd43b' });
+    this.loveGag(() => { this.picker = true; this.phase = ''; });
+  },
+  // Gerald serenades Pearl. It goes about as well as usual.
+  loveGag(after) {
+    const g = this.gerald, p = this.pearl, P = this.P, Q = this.tq;
+    Q.add(1.3, () => { g.eyes = 'heart'; S.love(); hearts(P, g.x + 20, g.y - 60, 5); });
+    Q.add(1.9, () => {
+      S.note(523); S.note(587, .25); g.anim = { type: 'sing', t: 0, dur: .6 };
+      for (let k = 0; k < 3; k++) P.add({ k: 'heart', x: g.x + 40, y: g.y - 50, vx: (p.x - g.x - 40) / 1.2 + rand(-30, 30), vy: (p.y - 60 - g.y + 50) / 1.2 + rand(-20, 20), life: 1.2, s: 20 });
+    });
+    if (Math.random() < .5) {        // earmuffs
+      Q.add(2.9, () => { S.hmph(); p.hat = 'muffs'; p.eyes = 'half'; p.rot = -.1; });
+      Q.add(3.5, () => { g.eyes = 'closed'; g.mouth = 'frown'; S.sad(); });
+    } else {                         // rose, returned to sender
+      Q.add(2.5, () => { S.kiss(); this.proj = { x0: g.x + 40, y0: g.y - 50, x1: p.x - 20, y1: p.y - 60, t: 0, dur: .8 }; });
+      Q.add(3.35, () => { S.boing(); p.flap = -1.3; p.eyes = 'half'; const q = this.proj; this.proj = { x0: q.x1, y0: q.y1, x1: g.x + 30, y1: g.y - 60, t: 0, dur: .5 }; });
+      Q.add(3.6, () => { p.flap = 0; });
+      Q.add(3.85, () => { this.proj = null; S.bonk(); stars(P, g.x + 30, g.y - 60); g.eyes = 'x'; });
+      Q.add(4.3, () => S.sad());
+    }
+    Q.add(6.4, () => { resetSeal(g); resetSeal(p); p.hat = this.pearlHat; if (after) after(); });
+  },
+  // --- Copy Me: Simon says, seal edition ---
+  startCopy() { this.resetStage(); this.seq = []; this.round = 0; this.lives = 3; this.earned = 0; this.results = null; this.nextRound(); },
+  nextRound() {
+    this.round++; let n;
+    do { n = irand(0, 5); } while (this.seq.length >= 2 && n === this.seq[this.seq.length - 1] && n === this.seq[this.seq.length - 2]);
+    this.seq.push(n); this.playSeq(.9);
+  },
+  playSeq(dl) {
+    this.phase = 'watch'; const gap = Math.max(.45, .75 - this.round * .02);
+    this.seq.forEach((n, i) => this.tq.add(dl + i * gap, () => this.play(n)));
+    this.tq.add(dl + this.seq.length * gap, () => { this.phase = 'input'; this.pos = 0; });
+  },
+  roundWon() {
+    this.phase = 'good'; this.earned += this.round; save.fish += this.round;
+    save.bestChoir = Math.max(save.bestChoir || 0, this.round); persist();
+    this.tq.add(.35, () => { S.pop(0, 1.5); this.P.add({ k: 'text', str: '+' + this.round, x: 80, y: 110, vy: -40, life: 1.2, s: 36, col: '#ffd43b' }); this.peng = [.8, .8, .8, .8]; });
+    this.tq.add(1.3, () => this.nextRound());
+  },
+  oops(i) {
+    const s = this.singers[i]; this.phase = 'oops'; this.lives--;
+    S.fart(); fartCloud(this.P, s.x - 50 * s.s, s.y - 15, 1, 8); s.anim = { type: 'blush', t: 0, dur: 1.2 };
+    if (this.lives > 0) {
+      this.banner = { t: 0, txt: 'Oops! Listen again' };
+      this.tq.add(1.8, () => { this.banner = null; this.playSeq(0); });
+    } else {
+      this.tq.add(.9, () => S.sad());
+      this.tq.add(2.6, () => { this.results = mkResults('You remembered ' + (this.round - 1) + '!', this.earned, save.bestChoir || 0, () => this.startCopy()); });
+    }
+  },
+  down(x, y) {
+    if (this.results) { resultsDown(this.results, x, y); return; }
+    if (homeBtn.hit(x, y)) { go(Hub); return; }
+    if (muteBtn.hit(x, y)) { toggleMute(); return; }
+    if (this.picker) {
+      for (const b of this.cards) if (b.hit(x, y)) { b.press = 1; S.tap(); this.startSong(b.i); return; }
+      this.setMode('free'); return;
+    }
+    for (const b of this.modeBtns) if (b.hit(x, y)) { b.press = 1; S.tap(); this.setMode(b.m); return; }
+    if (y > 150 && y < STAGE + 10) { for (let i = 0; i < 6; i++) if (Math.abs(x - this.cols[i].x) < this.cols[i].w / 2) { this.tapSeal(i); return; } }
+    if (Math.hypot(x - 60, y - (H - 40)) < 40 && this.cush > .6) {
+      this.cush = 0; S.fart('rip'); fartCloud(this.P, 60, H - 50, -1, 8, true); this.peng = this.peng.map(() => rand(.5, 1)); return;
+    }
+    const p = this.pearl;
+    if (hitSeal(p, x, y) && !p.anim && !this.tq.q.length) react(p, this.P, 'hmph');
+  },
+  key(k) {
+    const i = '123456'.indexOf(k) >= 0 ? '123456'.indexOf(k) : 'asdfgh'.indexOf(k);
+    if (i >= 0 && !this.picker && !this.results) this.tapSeal(i);
+    if (k === 'Escape') go(Hub);
+  },
+  update(dt) {
+    this.t += dt; now = this.t; this.P.update(dt); this.tq.update(dt); this.layout();
+    if (this.results) this.results.t += dt;
+    if (this.banner) this.banner.t += dt;
+    if (this.proj) this.proj.t += dt;
+    this.cush += dt;
+    this.peng = this.peng.map(v => Math.max(0, v - dt));
+    this.singers.forEach((s, i) => { s.x = this.cols[i].x; s.y = this.cols[i].top + s.dy; s.glow = Math.max(0, s.glow - dt * 2.5); sealTick(s, dt, this.t, this.P); });
+    const p = this.pearl; p.x = W * .8; p.y = H - 26 + p.dy; sealTick(p, dt, this.t, this.P);
+  },
+  draw(c) {
+    const t = this.t;
+    // night sky with northern lights
+    const sky = c.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#0b1d3a'); sky.addColorStop(.7, '#1d3b6e'); sky.addColorStop(1, '#2d5a8c');
+    c.fillStyle = sky; c.fillRect(0, 0, W, H);
+    for (let i = 0; i < 40; i++) {
+      c.globalAlpha = .4 + .4 * Math.sin(t * 2 + i * 1.7);
+      c.fillStyle = '#fff'; c.beginPath(); c.arc((i * 137.5) % W, (i * 53.3) % 300, 1.6, 0, TAU); c.fill();
+    }
+    [['rgba(99,230,190,.16)', 0], ['rgba(177,151,252,.14)', 1], ['rgba(116,192,252,.14)', 2]].forEach(([col, b]) => {
+      c.fillStyle = col; c.beginPath();
+      for (let x = 0; x <= W; x += 20) c.lineTo(x, 110 + b * 45 + Math.sin(x * .008 + t * .4 + b * 2) * 32);
+      for (let x = W; x >= 0; x -= 20) c.lineTo(x, 180 + b * 45 + Math.sin(x * .01 + t * .5 + b) * 26);
+      c.closePath(); c.fill();
+    });
+    c.globalAlpha = 1;
+    // stage + audience floor
+    c.fillStyle = '#20406a'; c.fillRect(0, STAGE + 20, W, H - STAGE - 20);
+    c.fillStyle = '#cfe8f7'; c.fillRect(0, STAGE, W, 22); c.fillStyle = '#f4fbff'; c.fillRect(0, STAGE - 4, W, 8);
+    // the singers on their rainbow ice blocks
+    const nextNote = this.mode === 'song' && this.phase === 'play' ? this.song.n[this.pos] : -1;
+    this.singers.forEach((s, i) => {
+      const col = this.cols[i], bw = col.w - 16, gl = s.glow;
+      if (i === nextNote) {
+        c.strokeStyle = 'rgba(255,255,255,' + (.5 + .4 * Math.sin(t * 8)) + ')'; c.lineWidth = 6;
+        rr(c, col.x - bw / 2 - 7, col.top - 7, bw + 14, STAGE - col.top + 7, 14); c.stroke();
+        const ay = col.top - 108 - Math.abs(Math.sin(t * 6)) * 12;
+        c.fillStyle = '#fff'; c.beginPath(); c.moveTo(col.x - 14, ay - 16); c.lineTo(col.x + 14, ay - 16); c.lineTo(col.x, ay); c.closePath(); c.fill();
+      }
+      if (gl > 0) { c.fillStyle = 'rgba(255,255,255,' + gl * .35 + ')'; rr(c, col.x - bw / 2 - 10, col.top - 10, bw + 20, STAGE - col.top + 10, 16); c.fill(); }
+      c.fillStyle = mix(NOTE_COLS[i], '#ffffff', gl * .55); rr(c, col.x - bw / 2, col.top, bw, STAGE - col.top, 10); c.fill();
+      c.fillStyle = 'rgba(255,255,255,.35)'; rr(c, col.x - bw / 2 + 5, col.top + 4, bw - 10, 8, 4); c.fill();
+      drawSeal(c, s.x, s.y, s);
+    });
+    // audience: whoopee cushion, penguins, and Pearl
+    const fl = this.cush < .6 ? Math.sin(this.cush / .6 * Math.PI) : 0;
+    c.fillStyle = '#ff6b9d'; c.beginPath(); c.ellipse(60, H - 36 + fl * 5, 30 + fl * 6, 14 - fl * 7, 0, 0, TAU); c.fill();
+    c.fillStyle = '#e64980'; c.beginPath(); c.moveTo(86, H - 38); c.lineTo(102, H - 44); c.lineTo(102, H - 32); c.closePath(); c.fill();
+    for (let k = 0; k < 4; k++) {
+      const hop = this.peng[k] > 0 ? Math.abs(Math.sin(this.peng[k] * 14)) * 16 : 0;
+      c.save(); c.translate(160 + k * 78, H - 14 - hop); c.scale(.85, .85); drawPenguin(c, t + k); c.restore();
+    }
+    drawSeal(c, this.pearl.x, this.pearl.y, this.pearl);
+    if (this.proj) {
+      const q = this.proj, k = Math.min(1, q.t / q.dur);
+      c.save(); c.translate(lerp(q.x0, q.x1, k), lerp(q.y0, q.y1, k) - Math.sin(k * Math.PI) * 80); c.rotate(t * 10); rose(c, -18, 9, 1.4); c.restore();
+    }
+    this.P.draw(c);
+    // HUD
+    fishPill(c, save.fish);
+    cornerBtns(c, t, true);
+    this.modeBtns.forEach(b => {
+      if (b.m === this.mode) { c.fillStyle = '#fff'; rr(c, b.x - b.w / 2 - 5, b.y - b.h / 2 - 5, b.w + 10, b.h + 12, 20); c.fill(); }
+      b.draw(c, t);
+    });
+    if (this.mode === 'song' && this.song && !this.picker) {
+      const n = this.song.n.length, sp = Math.min(20, (W - 200) / n), x0 = W / 2 - sp * (n - 1) / 2;
+      txt(c, this.phase === 'done' ? 'Bravo!' : this.song.name, W / 2, 112, 34, '#fff');
+      this.song.n.forEach((note, i) => {
+        c.fillStyle = i < this.pos ? NOTE_COLS[note] : 'rgba(255,255,255,.25)';
+        c.beginPath(); c.arc(x0 + i * sp, 146, i === this.pos ? 8 : 6, 0, TAU); c.fill();
+      });
+    }
+    if (this.mode === 'copy' && !this.results) {
+      const msg = { watch: 'Watch and listen!', input: 'Your turn!', good: 'Yes!', oops: '' }[this.phase] || '';
+      if (msg) txt(c, msg, W / 2, 112, 38, this.phase === 'input' ? '#ffe066' : '#fff');
+      txt(c, 'Round ' + this.round, W / 2, 150, 24, '#b9dcf5', 'center', null);
+      livesRow(c, this.lives);
+    }
+    if (this.banner && !(this.mode === 'free' && this.taps >= 3)) {
+      const b = this.banner, k = Math.min(1, b.t * 3);
+      c.save(); c.translate(W / 2, 118); c.scale(eBack(k), eBack(k)); txt(c, b.txt, 0, 0, 38, '#fff'); c.restore();
+    }
+    if (this.picker) {
+      c.fillStyle = 'rgba(8,20,40,.6)'; c.fillRect(0, 0, W, H);
+      txt(c, 'Pick a song!', W / 2, H / 2 - 150, 44, '#fff');
+      this.cards.forEach(b => b.draw(c, t));
     }
     if (this.results) drawResults(c, this.results, t);
   }
