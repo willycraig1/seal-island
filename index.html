@@ -50,7 +50,7 @@ function mix(h1, h2, t) {
 
 // ---------- save data ----------
 const SAVE_KEY = 'sealIsland.v1';
-const save = { fish: 0, bestSlide: 0, bestStack: 0, muted: false, owned: [], outfit: {} };
+const save = { fish: 0, bestSlide: 0, bestStack: 0, bestLaunch: 0, pearlDist: 120, muted: false, owned: [], outfit: {} };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s) Object.assign(save, s); } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
@@ -279,6 +279,19 @@ const S = {
     if (!this.ok()) return; const t = this.now(dl);
     const o = this.o('sawtooth', 30, t, .8); o.frequency.exponentialRampToValueAtTime(110, t + .5);
     const lp = this.f('lowpass', 600, 2), g = this.g(0); this.env(g, t, .05, .35, .5, .2);
+    o.connect(lp); lp.connect(g); g.connect(this.out);
+  },
+  flop(dl) {
+    if (!this.ok()) return; const t = this.now(dl);
+    const nz = this.n(t, .2), lp = this.f('lowpass', 900), g = this.g(0); this.env(g, t, .002, .6, .02, .15);
+    nz.connect(lp); lp.connect(g); g.connect(this.out);
+    const o = this.o('sine', 160, t, .2); o.frequency.exponentialRampToValueAtTime(60, t + .15);
+    const g2 = this.g(0); this.env(g2, t, .002, .5, .02, .12); o.connect(g2); g2.connect(this.out);
+  },
+  stretch(dl) {
+    if (!this.ok()) return; const t = this.now(dl);
+    const o = this.o('sawtooth', 70, t, .5); o.frequency.exponentialRampToValueAtTime(150, t + .45);
+    const lp = this.f('lowpass', 500, 4), g = this.g(0); this.env(g, t, .05, .15, .3, .1);
     o.connect(lp); lp.connect(g); g.connect(this.out);
   },
   horn(dl) {
@@ -879,7 +892,7 @@ const Hub = {
     this.g = this.seals[2];
     this.pearl = wear(mkSeal({ id: 'pearl', bx: 320, s: .88, col: '#eef2f6', belly: '#ffffff', flip: true, bow: true, lashes: true }), 'pearl');
     this.cush = { bx: -95, t: 9 };
-    const card = (label, art) => (c, w, h, t) => { c.save(); c.translate(0, 10); art(c, t); c.restore(); txt(c, label, 0, 38, 28, '#fff', 'center', 'rgba(0,0,0,.25)', 6); };
+    const card = (label, art) => (c, w, h, t) => { c.save(); c.translate(0, 10); art(c, t); c.restore(); txt(c, label, 0, 38, Math.min(28, w / 6.6), '#fff', 'center', 'rgba(0,0,0,.25)', 6); };
     this.btns = [
       new Btn({ w: 230, h: 124, col: '#2d9cdb', bob: 0, act: () => go(Slide), art: card('Belly Slide', (c, t) => {
         c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 4; c.lineCap = 'round';
@@ -889,12 +902,18 @@ const Hub = {
       new Btn({ w: 230, h: 124, col: '#f2994a', bob: 1.7, act: () => go(Stack), art: card('Seal Stack', (c, t) => {
         drawSeal(c, 0, 0, this.iconStack[0]); drawSeal(c, 4, -19, this.iconStack[1]); drawSeal(c, -2, -38, this.iconStack[2]);
       }) }),
+      new Btn({ w: 230, h: 124, col: '#12b886', bob: 2.4, act: () => go(Launch), art: card('Flop Launch', (c, t) => {
+        c.setLineDash([4, 6]); c.strokeStyle = 'rgba(255,255,255,.8)'; c.lineWidth = 3;
+        c.beginPath(); c.moveTo(-62, 0); c.quadraticCurveTo(-10, -72, 52, -8); c.stroke(); c.setLineDash([]);
+        drawSeal(c, 6, -26, this.iconLaunch);
+      }) }),
       new Btn({ w: 230, h: 124, col: '#9c5de0', bob: 3.1, act: () => go(Shop), art: card('Fish Shop', (c, t) => {
         c.save(); c.translate(-22, -18); c.scale(1.4, 1.4); c.translate(-ITEM.crown.ic[0], -ITEM.crown.ic[1]); ITEM.crown.draw(c, t); c.restore();
         fish(c, 34, -18, 46, '#ffa94d', Math.sin(t * 3) * .2);
       }) })
     ];
     this.iconSlide = wear(mkSeal({ s: .48, col: GCOL, bowtie: true, mouth: 'grin', rot: .12, flap: -1.6 }), 'gerald');
+    this.iconLaunch = wear(mkSeal({ s: .42, col: GCOL, bowtie: true, rot: -.45, eyes: 'wide', mouth: 'grin' }), 'gerald');
     this.iconStack = [mkSeal({ s: .3, col: '#7d8e9e' }), mkSeal({ s: .3, col: '#b8a99a', flip: true }), wear(mkSeal({ s: .3, col: GCOL, bowtie: true, eyes: 'heart' }), 'gerald')];
   },
   update(dt) {
@@ -906,7 +925,8 @@ const Hub = {
     if (this.proj) { this.proj.t += dt; }
     if (!this.busy) { this.auto -= dt; if (this.auto <= 0) this.startSkit(); }
     this.cush.t += dt;
-    this.btns.forEach((b, i) => { b.x = cx + (i - 1) * 250; b.y = H - 80; });
+    const sp = Math.min(250, (W - 30) / 4);
+    this.btns.forEach((b, i) => { b.w = sp - 14; b.x = cx + (i - 1.5) * sp; b.y = H - 80; });
   },
   startSkit() { let i; do { i = irand(0, 3); } while (i === this.last); this.last = i; this.skit(i); },
 
@@ -1015,7 +1035,7 @@ const Hub = {
       }
     }
   },
-  key(k) { if (k === '1') go(Slide); if (k === '2') go(Stack); if (k === '3') go(Shop); },
+  key(k) { const to = { 1: Slide, 2: Stack, 3: Launch, 4: Shop }[k]; if (to) go(to); },
   draw(c) {
     const t = this.t, cx = W / 2, L = cx - 470, R = cx + 185, T = BERG_Y;
     drawSky(c, SEA); drawSun(c, W - 150, 120); drawClouds(c, t, 40); drawFarBergs(c, SEA);
@@ -1177,6 +1197,12 @@ const Slide = {
     this.swipe = { x, y };
     if (this.state === 'play' || this.state === 'intro') this.setLane(nearestLane(y));
   },
+  move(x, y) {
+    if (!this.swipe) return;
+    const dy = y - this.swipe.y;
+    if (Math.abs(dy) > 45) { this.setLane(this.lane + (dy > 0 ? 1 : -1)); this.swipe = { x, y }; }
+  },
+  up() { this.swipe = null; },
   key(k) {
     if (this.state !== 'play' && this.state !== 'intro') return;
     if (k === 'ArrowUp' || k === 'w') this.setLane(this.lane - 1);
@@ -1471,6 +1497,304 @@ const Stack = {
   }
 };
 
+// ---------- FLOP LAUNCH ----------
+const GY = 480, LX = 240, PXM = 20;   // ground line, slingshot x, pixels per metre
+function drawWalrus(c, awake, sq) {
+  c.save(); c.scale(1 + sq, 1 - sq);
+  c.fillStyle = '#6d4c41'; c.beginPath(); c.ellipse(78, -8, 22, 9, .3, 0, TAU); c.fill();
+  c.fillStyle = '#8d6e63'; c.beginPath(); c.ellipse(10, -42, 78, 42, 0, 0, TAU); c.fill();
+  c.beginPath(); c.arc(-52, -66, 34, 0, TAU); c.fill();
+  c.fillStyle = '#a1887f'; c.beginPath(); c.ellipse(10, -20, 60, 16, 0, 0, TAU); c.fill();
+  c.fillStyle = '#6d4c41'; c.beginPath(); c.ellipse(-30, -10, 20, 8, -.3, 0, TAU); c.fill();
+  c.fillStyle = '#fffde7';
+  for (const x of [-74, -56]) { c.beginPath(); c.moveTo(x - 5, -52); c.quadraticCurveTo(x - 4, -30, x + 1, -18); c.quadraticCurveTo(x + 3, -34, x + 5, -52); c.fill(); }
+  c.fillStyle = '#bcaaa4'; c.beginPath(); c.ellipse(-74, -58, 13, 10, 0, 0, TAU); c.fill(); c.beginPath(); c.ellipse(-56, -58, 13, 10, 0, 0, TAU); c.fill();
+  c.fillStyle = '#3e2723'; c.beginPath(); c.ellipse(-66, -66, 7, 5, 0, 0, TAU); c.fill();
+  c.strokeStyle = 'rgba(60,40,30,.6)'; c.lineWidth = 1.2; c.beginPath();
+  for (const [x, y, d] of [[-80, -58, -1], [-82, -53, -1], [-50, -58, 1], [-48, -53, 1]]) { c.moveTo(x, y); c.lineTo(x + d * 13, y + 2); }
+  c.stroke();
+  if (awake) {
+    for (const x of [-72, -54]) { c.fillStyle = '#fff'; c.beginPath(); c.arc(x, -80, 6, 0, TAU); c.fill(); c.fillStyle = '#222'; c.beginPath(); c.arc(x - 1, -79, 3, 0, TAU); c.fill(); }
+    c.strokeStyle = '#3e2723'; c.lineWidth = 3; c.beginPath(); c.moveTo(-80, -93); c.lineTo(-66, -87); c.moveTo(-46, -93); c.lineTo(-60, -87); c.stroke();
+  } else {
+    c.strokeStyle = '#3e2723'; c.lineWidth = 2.5;
+    for (const x of [-72, -54]) { c.beginPath(); c.arc(x, -82, 5, .15 * Math.PI, .85 * Math.PI); c.stroke(); }
+  }
+  c.restore();
+}
+function drawSpring(c, comp) {
+  const h = 46 * (1 - comp * .6);
+  c.strokeStyle = '#868e96'; c.lineWidth = 5; c.lineJoin = 'round'; c.beginPath(); c.moveTo(-18, -4);
+  for (let i = 1; i <= 6; i++) c.lineTo(i % 2 ? 18 : -18, -4 - h * i / 6);
+  c.stroke();
+  c.fillStyle = '#495057'; rr(c, -26, -6, 52, 8, 4); c.fill();
+  c.fillStyle = '#e03131'; rr(c, -28, -h - 12, 56, 12, 6); c.fill();
+}
+const Launch = {
+  enter() {
+    Object.assign(this, { t: 0, P: new Parts(), tq: new TQ(), state: 'aim', objs: [], nextGen: 950, camX: 0, camY: 0, drag: null,
+      px: LX, py: GY - 120, vx: 0, vy: 0, onGround: false, boosts: 3, fish: 0, dist: null, passed: false, near: false, results: null, committed: false, hintT: 0, snap: 0 });
+    this.g = wear(mkSeal({ s: .8, col: GCOL, bowtie: true }), 'gerald');
+    this.pearl = wear(mkSeal({ s: .8, col: '#eef2f6', belly: '#fff', flip: true, bow: true, lashes: true }), 'pearl');
+    this.pearlX = LX + save.pearlDist * PXM;
+    this.banner = { t: 0, txt: 'Pull back and let go!', sub: 'Pearl is ' + save.pearlDist + ' m away' };
+    this.gen();
+  },
+  gen() {
+    while (this.nextGen < this.camX + W + 500) {
+      const x = this.nextGen, r = Math.random(), last = this.objs.length ? this.objs[this.objs.length - 1].k : '';
+      if (Math.abs(x - this.pearlX) < 260) { this.nextGen += 300; continue; }
+      if (r < .22) this.objs.push({ k: 'penguin', x, fy: 0, fr: 0 });
+      else if (r < .36) this.objs.push({ k: 'spring', x, comp: 0 });
+      else if (r < .45 && last !== 'walrus') this.objs.push({ k: 'walrus', x, sq: 0, awake: false, z: rand(0, 1.5) });
+      else if (r < .92) { const h0 = rand(90, 330); for (let i = 0; i < 5; i++) this.objs.push({ k: 'fish', x: x + i * 55, y: GY - h0 - Math.sin(i / 4 * Math.PI) * 70 }); }
+      else this.objs.push({ k: 'beans', x, y: GY - rand(120, 300) });
+      this.nextGen += rand(420, 800);
+    }
+    this.objs = this.objs.filter(o => o.x > this.camX - 400);
+  },
+  pull() {
+    if (!this.drag) return { dx: 0, dy: 0 };
+    let dx = Math.min(10, this.drag.x - this.drag.x0), dy = this.drag.y - this.drag.y0;
+    const L = Math.hypot(dx, dy), M = 170; if (L > M) { dx *= M / L; dy *= M / L; }
+    return { dx, dy: Math.min(dy, 110) };
+  },
+  launch(p) {
+    this.vx = Math.max(150, -p.dx * 8.5); this.vy = -p.dy * 8.5;
+    this.state = 'fly'; this.banner = null; this.hintT = 2.6; this.snap = 1;
+    this.g.eyes = 'wide'; this.g.mouth = 'grin';
+    S.boing(0, .7); S.whistle(true, .05, .9); S.honk(1.4, .1);
+  },
+  toot() {
+    if (this.boosts <= 0) { S.honk(.7); return; }
+    this.boosts--; this.vy = Math.max(-700, Math.min(this.vy, 0) - 470); this.vx += 50; this.onGround = false;
+    S.fart(pick(['rip', 'long', 'squeaky'])); fartCloud(this.P, this.px - 60, this.py - 20, 1, 10, true);
+  },
+  collide() {
+    const g = this.g, cx = this.px, cy = this.py - 26;
+    for (const o of this.objs) {
+      if (o.hit) continue;
+      if (o.k === 'fish' || o.k === 'beans') {
+        if (Math.hypot(o.x - cx, o.y - cy) < 55) {
+          o.hit = true;
+          if (o.k === 'fish') { this.fish++; S.pop(); this.P.add({ k: 'text', str: '+1', x: o.x, y: o.y - 20, vy: -80, life: .8, s: 28, col: '#ffa94d' }); }
+          else { this.boosts++; S.whistle(true, 0, .3); this.P.add({ k: 'text', str: 'BEANS!', x: o.x, y: o.y - 30, vy: -60, life: 1.1, s: 34, col: '#ff922b' }); }
+        }
+        continue;
+      }
+      const w = { penguin: 42, spring: 42, walrus: 95 }[o.k], h = { penguin: 62, spring: 54, walrus: 92 }[o.k];
+      if (Math.abs(o.x - cx) < w && this.py > GY - h && this.vy >= -200) {
+        o.hit = true;
+        if (o.k === 'penguin') {
+          this.vy = -620; this.vx = this.vx * .9 + 60;
+          o.fly = { vx: rand(250, 450), vy: -rand(500, 750), vr: rand(8, 14) }; S.squawk(); S.boing(0, 1.2); stars(this.P, o.x, GY - 50);
+        } else if (o.k === 'spring') {
+          this.vy = -860; this.vx += 80; o.comp = 1; S.boing(0, .9); S.whistle(true, .05, .5);
+        } else {
+          this.vy = -1080; this.vx += 140; o.sq = .35; o.awake = true; S.boing(0, .5); S.honk(.55, .35); S.hmph(.7);
+        }
+        this.py = Math.min(this.py, GY - h); this.onGround = false; g.eyes = 'wide'; g.mouth = 'grin';
+      }
+    }
+  },
+  // as Pearl comes into view Gerald swoons and blows a kiss; when he whooshes past, she snubs him
+  nearPearl() {
+    this.near = true; const g = this.g;
+    g.eyes = 'heart'; S.love(); hearts(this.P, this.px, this.py - 80, 5);
+    this.tq.add(.3, () => {
+      S.kiss(); const x = this.px + 40, y = this.py - 60;
+      this.P.add({ k: 'heart', x, y, vx: (this.pearlX - x) / .7, vy: (GY - 90 - y) / .7, s: 28, life: .7, fade: false });
+    });
+  },
+  passPearl() {
+    this.passed = true; const g = this.g, p = this.pearl;
+    S.hmph(); p.flip = false; p.eyes = 'half'; p.rot = -.15;
+    this.tq.add(.9, () => { if (g.eyes === 'heart') g.eyes = 'wide'; });
+  },
+  stop() {
+    this.state = 'done'; this.dist = Math.max(0, Math.floor((this.px - LX) / PXM));
+    const g = this.g; g.eyes = 'closed'; g.mouth = 'grin';
+    for (let i = 0; i < 6; i++) this.P.add({ k: 'star', x: this.px + 20, y: this.py - 90, vx: Math.cos(i) * 40, vy: -20, vr: 4, life: 1.2, s: 9 });
+    if (this.passed) S.fanfare(.3);
+    else if (this.pearlX - this.px < 30 * PXM) S.sad(.3);
+    else S.honk2(1.1, .3);
+    this.tq.add(1.8, () => this.finish());
+  },
+  commit() {
+    if (this.committed) return; this.committed = true;
+    const d = this.dist != null ? this.dist : this.state === 'aim' ? 0 : Math.max(0, Math.floor((this.px - LX) / PXM));
+    this.fish += Math.floor(d / 10);
+    save.fish += this.fish; save.bestLaunch = Math.max(save.bestLaunch || 0, d);
+    if (this.passed) save.pearlDist = Math.min(400, save.pearlDist + 40);
+    persist();
+  },
+  finish() { this.commit(); this.results = mkResults(this.passed ? 'You reached Pearl!' : this.dist + ' m!', this.fish, save.bestLaunch + ' m', () => go(Launch)); },
+  down(x, y) {
+    if (this.results) { resultsDown(this.results, x, y); return; }
+    if (homeBtn.hit(x, y)) { this.commit(); go(Hub); return; }
+    if (muteBtn.hit(x, y)) { toggleMute(); return; }
+    if (this.state === 'aim') { this.drag = { x0: x, y0: y, x, y }; S.stretch(); }
+    else if (this.state === 'fly') this.toot();
+  },
+  move(x, y) { if (this.drag) { this.drag.x = x; this.drag.y = y; } },
+  up() {
+    if (!this.drag || this.state !== 'aim') { this.drag = null; return; }
+    const p = this.pull(); this.drag = null;
+    if (Math.hypot(p.dx, p.dy) < 25) { S.boing(0, .6); return; }
+    this.launch(p);
+  },
+  key(k) {
+    if (k === 'Escape') { this.commit(); go(Hub); }
+    if (k === ' ' && this.state === 'fly') this.toot();
+    if (k === ' ' && this.state === 'aim') this.launch({ dx: -120, dy: 110 });
+  },
+  update(dt) {
+    this.t += dt; now = this.t; this.P.update(dt); this.tq.update(dt);
+    if (this.results) this.results.t += dt;
+    if (this.banner) this.banner.t += dt;
+    const g = this.g;
+    if (this.state === 'aim') {
+      const p = this.pull(), len = Math.hypot(p.dx, p.dy);
+      this.px = LX + p.dx; this.py = GY - 120 + p.dy;
+      g.eyes = len > 90 ? 'wide' : 'n'; g.mouth = len > 90 ? 'o' : 'smile';
+      g.rot = len > 10 ? Math.atan2(-p.dy, -p.dx) * .6 : 0;
+    } else if (this.state === 'fly') {
+      this.vy += 1400 * dt; this.vx -= this.vx * .12 * dt; this.px += this.vx * dt; this.py += this.vy * dt;
+      if (this.py >= GY) {
+        this.py = GY;
+        if (this.vy > 260) {
+          this.vy = -this.vy * .4; this.vx *= .72; g.sq = .25; S.flop();
+          for (let i = 0; i < 8; i++) this.P.add({ k: 'snow', x: this.px + rand(-40, 40), y: GY - 4, vx: rand(-120, 200), vy: -rand(100, 300), g: 900, s: rand(3, 6), life: .8 });
+        } else { this.vy = 0; this.onGround = true; }
+      } else this.onGround = false;
+      if (this.onGround) {
+        this.vx = Math.max(0, this.vx - 460 * dt); g.rot += (.05 - g.rot) * Math.min(1, dt * 10);
+        if (this.vx > 60 && Math.random() < dt * 20) this.P.add({ k: 'snow', x: this.px - 60, y: GY - 6, vx: -rand(40, 120), vy: -rand(60, 160), g: 700, s: rand(2, 4), life: .5 });
+      } else g.rot = clamp(Math.atan2(this.vy, this.vx) * .8, -1.2, 1.3);
+      if (g.sq > 0) g.sq = Math.max(0, g.sq - dt * 1.5);
+      this.collide();
+      if (!this.near && this.px > this.pearlX - 450) this.nearPearl();
+      if (!this.passed && this.px > this.pearlX) this.passPearl();
+      if (this.onGround && this.vx < 6) this.stop();
+    }
+    if (this.snap > 0) this.snap = Math.max(0, this.snap - dt * 2);
+    const tx = Math.max(0, this.px - W * .35), ty = Math.min(0, this.py - 250);
+    this.camX += (tx - this.camX) * Math.min(1, dt * 6); this.camY += (ty - this.camY) * Math.min(1, dt * 4);
+    this.gen();
+    for (const o of this.objs) {
+      if (o.comp > 0) o.comp = Math.max(0, o.comp - dt * 3);
+      if (o.sq > 0) o.sq = Math.max(0, o.sq - dt * 1.5);
+      if (o.fly) { o.fly.vy += 1500 * dt; o.x += o.fly.vx * dt; o.fy += o.fly.vy * dt; o.fr += o.fly.vr * dt; }
+      if (o.k === 'walrus' && !o.awake && o.x < this.camX + W + 100) {
+        o.z -= dt; if (o.z <= 0) { o.z = 1.4; this.P.add({ k: 'text', str: 'z', x: o.x - 40, y: GY - 110, vx: 25, vy: -45, life: 1.6, s: 28, col: '#ffffff' }); }
+      }
+    }
+    sealTick(g, dt, this.t, this.P); sealTick(this.pearl, dt, this.t, this.P);
+    if (this.hintT > 0) this.hintT -= dt;
+  },
+  drawSling(c, front) {
+    const lx = LX - 34, rx = LX + 34, top = GY - 150, x = front ? rx : lx;
+    c.fillStyle = '#a9d8f0'; c.beginPath(); c.moveTo(x - 14, GY + 4); c.lineTo(x - 5, top - 10); c.lineTo(x + 5, top - 10); c.lineTo(x + 14, GY + 4); c.closePath(); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.6)'; c.beginPath(); c.moveTo(x - 8, GY); c.lineTo(x - 3, top); c.lineTo(x, top); c.lineTo(x - 2, GY); c.closePath(); c.fill();
+    const pouch = this.state === 'aim' ? [this.px - 10, this.py - 30] : [LX + Math.sin(this.t * 40) * 14 * this.snap, top + 20];
+    c.strokeStyle = '#e64980'; c.lineWidth = 7; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x, top); c.lineTo(pouch[0], pouch[1]); c.stroke();
+  },
+  draw(c) {
+    const t = this.t, cx = this.camX, cy = this.camY, hgt = clamp(-cy / 700, 0, 1), g = this.g;
+    drawSky(c, H, mix('#7ec8f0', '#4a7fc4', hgt), mix('#d4f1ff', '#a9d4f5', hgt));
+    drawSun(c, W - 120, 90 - cy * .1);
+    drawClouds(c, t * .5 - cx * .08, 30 - cy * .3);
+    // distant mountains
+    const by = GY - 40 - cy, mo = (cx * .15) % 400;
+    c.fillStyle = '#cfe6f5'; c.beginPath(); c.moveTo(0, by);
+    for (let x = -mo - 400; x < W + 400; x += 400) { c.lineTo(x + 80, by - 90); c.lineTo(x + 150, by - 55); c.lineTo(x + 240, by - 120); c.lineTo(x + 400, by); }
+    c.lineTo(W, by); c.lineTo(W, by + 60); c.lineTo(0, by + 60); c.closePath(); c.fill();
+    c.save(); c.translate(-cx, -cy);
+    // ice sheet
+    const gh = cy + H - GY + 20;
+    if (gh > 0) {
+      c.fillStyle = '#dcefff'; c.fillRect(cx - 10, GY, W + 20, gh);
+      c.fillStyle = '#ffffff'; c.fillRect(cx - 10, GY - 2, W + 20, 12);
+      c.strokeStyle = 'rgba(140,185,215,.5)'; c.lineWidth = 2;
+      for (let i = Math.floor(cx / 140); i < (cx + W) / 140 + 1; i++) {
+        const r = Math.abs(Math.sin(i * 91.7) * 4375.5) % 1, x = i * 140 + r * 60, y = GY + 24 + r * 70;
+        c.beginPath(); c.moveTo(x - 20, y); c.lineTo(x - 4, y + 3); c.lineTo(x + 18, y - 2); c.stroke();
+      }
+      // distance posts
+      for (let m = Math.max(10, Math.ceil((cx - LX) / PXM / 10) * 10); LX + m * PXM < cx + W + 60; m += 10) {
+        const x = LX + m * PXM;
+        if (m % 50 === 0) {
+          c.fillStyle = '#7a4b2a'; c.fillRect(x - 3, GY - 70, 6, 72);
+          c.fillStyle = '#fff'; rr(c, x - 38, GY - 96, 76, 34, 10); c.fill();
+          txt(c, m + ' m', x, GY - 79, 22, '#1c7ed6', 'center', null);
+        } else { c.fillStyle = 'rgba(28,126,214,.35)'; c.fillRect(x - 2, GY - 16, 4, 18); }
+      }
+    }
+    this.drawSling(c, false);
+    // Pearl, waiting (not very patiently) on her snowbank
+    const pX = this.pearlX;
+    if (pX > cx - 200 && pX < cx + W + 200) {
+      c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(pX, GY + 4, 110, 34, 0, Math.PI, TAU); c.fill();
+      c.strokeStyle = '#7a4b2a'; c.lineWidth = 3; c.beginPath(); c.moveTo(pX + 74, GY - 16); c.lineTo(pX + 74, GY - 112); c.stroke();
+      c.fillStyle = '#ff6b9d'; c.beginPath(); c.moveTo(pX + 74, GY - 112); c.lineTo(pX + 114, GY - 99); c.lineTo(pX + 74, GY - 86); c.closePath(); c.fill();
+      heart(c, pX + 88, GY - 99, 12, '#fff');
+      this.pearl.x = pX; this.pearl.y = GY - 28; drawSeal(c, pX, GY - 28, this.pearl);
+    }
+    // bouncy things and treats
+    for (const o of this.objs) {
+      if (o.x < cx - 150 || o.x > cx + W + 150) continue;
+      if (o.k === 'fish') { if (!o.hit) fish(c, o.x, o.y + Math.sin(t * 4 + o.x) * 4, 40, '#ffa94d'); continue; }
+      if (o.k === 'beans') { if (!o.hit) { c.save(); c.translate(o.x, o.y + 25); c.scale(.9, .9); drawBeans(c, t); c.restore(); } continue; }
+      c.save(); c.translate(o.x, GY + (o.fy || 0));
+      if (o.k === 'penguin') { if (o.fly) c.rotate(o.fr); c.scale(1.1, 1.1); drawPenguin(c, t + o.x * .01); }
+      else if (o.k === 'spring') drawSpring(c, o.comp);
+      else drawWalrus(c, o.awake, o.sq);
+      c.restore();
+    }
+    // Gerald + shadow
+    const lift = clamp(1 - (GY - this.py) / 600, .3, 1);
+    c.fillStyle = 'rgba(60,110,160,' + (.22 * lift) + ')'; c.beginPath(); c.ellipse(this.px - 4, GY + 3, 60 * g.s * lift, 8 * lift, 0, 0, TAU); c.fill();
+    drawSeal(c, this.px, this.py, g);
+    this.drawSling(c, true);
+    // aim preview dots
+    if (this.state === 'aim' && this.drag) {
+      const p = this.pull();
+      if (Math.hypot(p.dx, p.dy) > 25) {
+        let x = this.px, y = this.py - 26, vx = Math.max(150, -p.dx * 8.5), vy = -p.dy * 8.5;
+        c.fillStyle = '#ffffff';
+        for (let i = 0; i < 26; i++) {
+          vy += 1400 * .045; x += vx * .045; y += vy * .045; if (y > GY) break;
+          c.globalAlpha = 1 - i / 26; c.beginPath(); c.arc(x, y, 6 - i * .15, 0, TAU); c.fill();
+        }
+        c.globalAlpha = 1;
+      }
+    } else if (this.state === 'aim') {
+      const k = (t * .7) % 1, e = eIO(Math.min(1, k * 1.6));
+      c.globalAlpha = k < .8 ? .85 : (1 - k) * 4;
+      c.fillStyle = '#ffffff'; c.strokeStyle = '#1c7ed6'; c.lineWidth = 3;
+      c.beginPath(); c.arc(this.px - e * 110, this.py - 30 + e * 70, 20, 0, TAU); c.fill(); c.stroke();
+      c.globalAlpha = 1;
+    }
+    this.P.draw(c);
+    c.restore();
+    // HUD
+    fishPill(c, this.fish);
+    for (let i = 0; i < Math.min(this.boosts, 6); i++) { c.save(); c.translate(38 + i * 34, 128); c.scale(.55, .55); drawBeans(c, t); c.restore(); }
+    cornerBtns(c, t, true);
+    if (this.state !== 'aim') txt(c, Math.max(0, Math.floor((this.px - LX) / PXM)) + ' m', W / 2, 48, 46, '#fff');
+    if (this.banner) {
+      const b = this.banner, k = Math.min(1, b.t * 3);
+      c.save(); c.translate(W / 2, 150); c.scale(eBack(k), eBack(k));
+      txt(c, b.txt, 0, 0, 46, '#fff'); if (b.sub) txt(c, b.sub, 0, 50, 28, '#ffe066'); c.restore();
+    }
+    if (this.hintT > 0 && this.boosts > 0 && this.state === 'fly') {
+      c.save(); c.globalAlpha = Math.min(1, this.hintT); txt(c, 'Tap to toot!', W / 2, 110, 38, '#b9dc7e', 'center', '#2b5d12'); c.restore();
+    }
+    if (this.results) drawResults(c, this.results, t);
+  }
+};
+
 // ---------- FISH SHOP ----------
 const WHO = [
   { id: 'gerald', name: 'Gerald', col: GCOL, bowtie: true },
@@ -1589,11 +1913,12 @@ cv.addEventListener('pointerdown', e => {
   const [x, y] = toWorld(e); scene.down(x, y, e);
 }, { passive: false });
 cv.addEventListener('pointermove', e => {
-  if (scene !== Slide || !Slide.swipe) return;
-  const [x, y] = toWorld(e), dy = y - Slide.swipe.y;
-  if (Math.abs(dy) > 45) { Slide.setLane(Slide.lane + (dy > 0 ? 1 : -1)); Slide.swipe = { x, y }; }
+  if (next || portrait || !scene || !scene.move) return;
+  const [x, y] = toWorld(e); scene.move(x, y);
 });
-window.addEventListener('pointerup', () => { Slide.swipe = null; });
+const pointerUp = e => { if (!scene || !scene.up) return; const [x, y] = toWorld(e); scene.up(x, y); };
+window.addEventListener('pointerup', pointerUp);
+window.addEventListener('pointercancel', pointerUp);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('keydown', e => {
   if (e.repeat) return; S.init();
